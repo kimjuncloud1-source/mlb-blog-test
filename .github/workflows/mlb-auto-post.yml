@@ -10,6 +10,10 @@ on:
         required: false
         default: ""
 
+concurrency:
+  group: mlb-auto-post-main
+  cancel-in-progress: false
+
 jobs:
   post-mlb-results:
     runs-on: ubuntu-latest
@@ -20,6 +24,7 @@ jobs:
       - name: 📥 저장소 체크아웃
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: 🐍 Python 설치
@@ -29,6 +34,17 @@ jobs:
 
       - name: 📦 의존성 설치
         run: pip install requests
+
+      - name: ⚙️ Git 사용자 설정
+        run: |
+          git config user.name "${{ vars.GIT_USER_NAME || 'MLB-Bot' }}"
+          git config user.email "${{ vars.GIT_USER_EMAIL || 'mlb-bot@github-actions.local' }}"
+
+      - name: 🔄 최신 main 동기화
+        run: |
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
 
       - name: ⚾ MLB 경기 결과 수집 및 포스트 생성
         id: mlb
@@ -42,30 +58,31 @@ jobs:
       - name: 🔍 변경 사항 확인
         id: check_changes
         run: |
-          git pull --rebase origin main
           git add _posts/
           if git diff --staged --quiet; then
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "ℹ️ 새 포스트 없음 (이미 최신 상태)"
           else
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "✅ 새 포스트 감지됨"
           fi
 
-      - name: 💾 포스트 커밋 & 푸시
+      - name: 💾 포스트 커밋
         if: steps.check_changes.outputs.changed == 'true'
         run: |
-          git config user.name "${{ vars.GIT_USER_NAME || 'MLB-Bot' }}"
-          git config user.email "${{ vars.GIT_USER_EMAIL || 'mlb-bot@github-actions.local' }}"
           git commit -m "⚾ MLB 경기 결과 | ${{ steps.mlb.outputs.post_date }} (${{ steps.mlb.outputs.game_count }}경기)"
-          git push origin main
+
+      - name: 🚀 포스트 푸시
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git push origin HEAD:main
 
       - name: 📋 실행 요약
         run: |
-          echo "### ⚾ MLB 자동 포스팅 완료" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
-          echo "| 날짜 | ${{ steps.mlb.outputs.post_date }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 경기 수 | ${{ steps.mlb.outputs.game_count }}개 |" >> $GITHUB_STEP_SUMMARY
-          echo "| 변경 여부 | ${{ steps.check_changes.outputs.changed }} |" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚾ MLB 자동 포스팅 완료" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 항목 | 값 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-----|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 날짜 | ${{ steps.mlb.outputs.post_date }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 경기 수 | ${{ steps.mlb.outputs.game_count }}개 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 변경 여부 | ${{ steps.check_changes.outputs.changed }} |" >> "$GITHUB_STEP_SUMMARY"
