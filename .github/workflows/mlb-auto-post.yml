@@ -2,7 +2,7 @@ name: MLB 경기 결과 자동 포스팅
 
 on:
   schedule:
-    - cron: "30 23 * * *" # KST 기준 오전 8시 30분
+    - cron: "30 23 * * *" # KST 오전 8시 30분
   workflow_dispatch:
     inputs:
       target_date:
@@ -20,7 +20,7 @@ jobs:
       - name: 📥 저장소 체크아웃
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
 
       - name: 🐍 Python 설치
         uses: actions/setup-python@v5
@@ -39,17 +39,33 @@ jobs:
             python mlb_fetch.py
           fi
 
-      - name: 🔍 변경 사항 확인 및 푸시
+      - name: 🔍 변경 사항 확인
+        id: check_changes
         run: |
-          git config user.name  "MLB-Bot"
-          git config user.email "mlb-bot@github-actions.local"
+          git pull --rebase origin main
           git add _posts/
-          
-          if ! git diff --staged --quiet; then
-            git commit -m "⚾ MLB 경기 결과 업데이트"
-            git pull --rebase origin main # <--- 핵심: 준님이 수정한 파일들과 자동화 파일을 합쳐줍니다!
-            git push
-            echo "✅ 성공적으로 올라갔습니다!"
+          if git diff --staged --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ 새 포스트 없음 (이미 최신 상태)"
           else
-            echo "ℹ️ 새로 올릴 내용이 없습니다."
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "✅ 새 포스트 감지됨"
           fi
+
+      - name: 💾 포스트 커밋 & 푸시
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config user.name "${{ vars.GIT_USER_NAME || 'MLB-Bot' }}"
+          git config user.email "${{ vars.GIT_USER_EMAIL || 'mlb-bot@github-actions.local' }}"
+          git commit -m "⚾ MLB 경기 결과 | ${{ steps.mlb.outputs.post_date }} (${{ steps.mlb.outputs.game_count }}경기)"
+          git push origin main
+
+      - name: 📋 실행 요약
+        run: |
+          echo "### ⚾ MLB 자동 포스팅 완료" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| 날짜 | ${{ steps.mlb.outputs.post_date }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 경기 수 | ${{ steps.mlb.outputs.game_count }}개 |" >> $GITHUB_STEP_SUMMARY
+          echo "| 변경 여부 | ${{ steps.check_changes.outputs.changed }} |" >> $GITHUB_STEP_SUMMARY
